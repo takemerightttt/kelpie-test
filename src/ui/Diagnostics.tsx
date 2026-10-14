@@ -1,47 +1,38 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { Text } from "react-native";
 import type { ImportsApi, MockState } from "../core/api";
-import { Button, Card, Row, styles } from "./components";
+import { Button, Card } from "./components";
+import { CountersList } from "./CountersList";
+import { ScenarioList, type Scenario } from "./ScenarioList";
+import { styles } from "./styles";
 
-const MODES = ["happy", "lost_ack", "stale_status", "delete_failure"] as const;
-
-/** Reviewer-only screen for the mock's test-control routes. */
 export function Diagnostics({ api }: { api: ImportsApi }) {
   const [state, setState] = useState<MockState | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     try {
       setState(await api.mockState());
       setError(null);
     } catch {
       setError("Mock server is not reachable");
     }
-  };
+  }, [api]);
+
+  const handleScenario = useCallback(
+    async (mode: Scenario) => {
+      await api.setScenario(mode).catch(() => undefined);
+      await load();
+    },
+    [api, load],
+  );
 
   return (
     <Card title="Mock diagnostics">
-      {MODES.map((mode) => (
-        <Button
-          key={mode}
-          label={`Scenario: ${mode}`}
-          kind="secondary"
-          onPress={async () => {
-            await api.setScenario(mode).catch(() => undefined);
-            await load();
-          }}
-        />
-      ))}
+      <ScenarioList onSelect={handleScenario} />
       <Button label="Read counters" kind="secondary" onPress={load} />
       {error ? <Text style={styles.error}>{error}</Text> : null}
-      {state ? (
-        <>
-          <Row label="mode" value={state.mode} />
-          {Object.entries(state.stats).map(([k, v]) => (
-            <Row key={k} label={k} value={String(v)} />
-          ))}
-        </>
-      ) : null}
+      <CountersList state={state} />
     </Card>
   );
 }

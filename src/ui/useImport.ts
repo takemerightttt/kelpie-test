@@ -50,7 +50,6 @@ export function useImport() {
     [],
   );
 
-  // Relaunch and return from background: show the real state, never re-upload.
   useEffect(() => {
     const resume = () =>
       controller
@@ -71,7 +70,6 @@ export function useImport() {
     return () => sub.remove();
   }, [controller]);
 
-  // Poll only in the foreground while the status still changes; back off while the server is unreachable.
   useEffect(() => {
     if (timer.current) clearTimeout(timer.current);
     if (active && op && needsPolling(op)) {

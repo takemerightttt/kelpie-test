@@ -1,11 +1,6 @@
 import type { ReactNode } from "react";
-import {
-  ActivityIndicator,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { ActivityIndicator, Pressable, Text, View } from "react-native";
+import { styles } from "./styles";
 
 export function Button({
   label,
@@ -71,51 +66,5 @@ export function Row({ label, value }: { label: string; value: string }) {
 }
 
 export function Busy() {
-  return (
-    <ActivityIndicator
-      accessibilityLabel="Loading"
-      style={{ marginVertical: 8 }}
-    />
-  );
+  return <ActivityIndicator accessibilityLabel="Loading" style={styles.busy} />;
 }
-
-export const styles = StyleSheet.create({
-  card: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    gap: 8,
-  },
-  cardTitle: { fontSize: 18, fontWeight: "600", color: "#111" },
-  row: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
-    gap: 8,
-  },
-  rowLabel: { color: "#555", fontSize: 15 },
-  rowValue: { color: "#111", fontSize: 15, fontWeight: "500", flexShrink: 1 },
-  text: { color: "#222", fontSize: 15 },
-  hint: { color: "#666", fontSize: 13 },
-  error: { color: "#b00020", fontSize: 15 },
-  button: {
-    minHeight: 48,
-    borderRadius: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  primary: { backgroundColor: "#1b5e20" },
-  secondary: { backgroundColor: "#e8eaf0" },
-  danger: { backgroundColor: "#b00020" },
-  dim: { opacity: 0.6 },
-  buttonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
-    textAlign: "center",
-  },
-  secondaryText: { color: "#111" },
-});
