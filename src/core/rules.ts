@@ -1,6 +1,6 @@
-import type { JobView, Operation } from './types';
+import type { JobView, Operation } from "./types";
 
-const AFTER_DELETE = new Set(['deleting', 'deleted']);
+const AFTER_DELETE = new Set(["deleting", "deleted"]);
 
 /**
  * Decides whether a job response may replace what the app shows. Pure, so
@@ -21,18 +21,30 @@ export function acceptView(op: Operation, view: JobView): boolean {
 
 export function applyView(op: Operation, view: JobView): Operation {
   if (!acceptView(op, view)) return op;
-  return { ...op, jobId: view.jobId, job: view, phase: 'created' };
+  return { ...op, jobId: view.jobId, job: view, phase: "created" };
 }
 
 /** The server confirmed the deletion - only now may the UI say the data is gone. */
 export function isServerDeleted(op: Operation): boolean {
-  return op.job?.status === 'deleted';
+  return op.job?.status === "deleted";
 }
 
 /** Statuses that still change on their own, so the app keeps asking. */
 export function needsPolling(op: Operation): boolean {
   const status = op.job?.status;
-  return status === 'queued' || status === 'processing' || status === 'deleting';
+  return (
+    status === "queued" || status === "processing" || status === "deleting"
+  );
+}
+
+const POLL_MS = 700;
+const POLL_MAX_MS = 15_000;
+
+/** Fixed pace while the server answers; doubles after each failed check, capped at 15 s. */
+export function pollDelay(failures: number): number {
+  return failures === 0
+    ? POLL_MS
+    : Math.min(POLL_MS * 2 ** failures, POLL_MAX_MS);
 }
 
 /** Monthly total of the ready result in minor units (151.99 AUD -> 15199). */
@@ -41,7 +53,7 @@ export function monthlyTotalMinor(view: JobView | null): number {
 }
 
 export function formatMoney(minor: number, currency: string): string {
-  const sign = minor < 0 ? '-' : '';
+  const sign = minor < 0 ? "-" : "";
   const abs = Math.abs(minor);
-  return `${sign}${Math.floor(abs / 100)}.${String(abs % 100).padStart(2, '0')} ${currency}`;
+  return `${sign}${Math.floor(abs / 100)}.${String(abs % 100).padStart(2, "0")} ${currency}`;
 }

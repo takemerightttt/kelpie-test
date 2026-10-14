@@ -1,4 +1,4 @@
-import Constants from 'expo-constants';
+import Constants from "expo-constants";
 
 /**
  * The mock API address. Emulator/simulator: 127.0.0.1 (Android needs
@@ -6,4 +6,5 @@ import Constants from 'expo-constants';
  * app.json -> expo.extra to the Mac's LAN address, never a public host.
  */
 export const API_BASE_URL: string =
-  (Constants.expoConfig?.extra?.apiBaseUrl as string | undefined) ?? 'http://127.0.0.1:8787';
+  (Constants.expoConfig?.extra?.apiBaseUrl as string | undefined) ??
+  "http://127.0.0.1:8787";

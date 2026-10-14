@@ -1,5 +1,5 @@
-import { File, UploadType } from 'expo-file-system';
-import type { Http } from '../core/api';
+import { File, UploadType } from "expo-file-system";
+import type { Http } from "../core/api";
 
 const TIMEOUT_MS = 15000;
 
@@ -27,10 +27,10 @@ export function deviceHttp(baseUrl: string): Http {
       const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
       try {
         const res = await new File(fileUri).upload(baseUrl + path, {
-          httpMethod: 'POST',
+          httpMethod: "POST",
           uploadType: UploadType.BINARY_CONTENT,
           headers,
-          sessionType: 'foreground',
+          sessionType: "foreground",
           signal: controller.signal,
         });
         return { status: res.status, body: res.body };

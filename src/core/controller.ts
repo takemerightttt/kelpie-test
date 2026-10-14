@@ -1,15 +1,18 @@
-import type { ImportsApi } from './api';
-import { checkFile, HEAD_BYTES, type FileCheck } from './fileCheck';
-import { sizeBucket, type SafeLog } from './log';
-import { applyView } from './rules';
-import type { Operation } from './types';
+import { ResponseFormatError, type ImportsApi } from "./api";
+import { checkFile, HEAD_BYTES, type FileCheck } from "./fileCheck";
+import { sizeBucket, type SafeLog } from "./log";
+import { applyView } from "./rules";
+import type { Operation } from "./types";
 
 /** A file the user picked: already a private temporary copy made by the picker. */
 export type PickedFile = { uri: string; name: string };
 
 export interface FileStore {
   /** Size from metadata and the first `headBytes` bytes - never the whole file. */
-  inspect(uri: string, headBytes: number): Promise<{ size: number; head: Uint8Array }>;
+  inspect(
+    uri: string,
+    headBytes: number,
+  ): Promise<{ size: number; head: Uint8Array }>;
   /** Moves the picked temporary file into the app's private import folder. */
   keepPrivate(uri: string, key: string): Promise<string>;
   /** Deletes a private copy; missing files are fine. */
@@ -29,7 +32,17 @@ export type Deps = {
   log: SafeLog;
 };
 
-export type Inspected = { file: PickedFile; size: number; check: FileCheck };
+/**
+ * After a passing check the file is already in the app's private folder under its key: picker copies
+ * live in the cache, which the OS may clear while the user is still on the confirmation screen.
+ */
+export type Inspected = {
+  file: PickedFile;
+  size: number;
+  check: FileCheck;
+  key: string | null;
+  privateUri: string | null;
+};
 
 /**
  * The import flow, independent of React Native. Every server-changing request
@@ -49,28 +62,38 @@ export class ImportController {
   async inspect(file: PickedFile): Promise<Inspected> {
     const { size, head } = await this.d.files.inspect(file.uri, HEAD_BYTES);
     const check = checkFile(size, head);
-    this.d.log('file_checked', { sizeBucket: sizeBucket(size), format: check.ok ? check.format : undefined, reason: check.ok ? undefined : check.reason });
-    if (!check.ok) await this.d.files.remove(file.uri);
-    return { file, size, check };
+    this.d.log("file_checked", {
+      sizeBucket: sizeBucket(size),
+      format: check.ok ? check.format : undefined,
+      reason: check.ok ? undefined : check.reason,
+    });
+    if (!check.ok) {
+      await this.d.files.remove(file.uri);
+      return { file, size, check, key: null, privateUri: null };
+    }
+    const key = this.d.newKey();
+    const privateUri = await this.d.files.keepPrivate(file.uri, key);
+    return { file, size, check, key, privateUri };
   }
 
   /** The user cancelled on the confirmation screen. */
-  async discard(file: PickedFile): Promise<void> {
-    await this.d.files.remove(file.uri);
+  async discard(inspected: Inspected): Promise<void> {
+    await this.d.files.remove(inspected.privateUri ?? inspected.file.uri);
   }
 
   /** Confirmed: the key is created and stored before the first byte is sent. */
   async confirm(inspected: Inspected): Promise<Operation> {
-    if (!inspected.check.ok) throw new Error('cannot send a rejected file');
-    const key = this.d.newKey();
-    const localCopyUri = await this.d.files.keepPrivate(inspected.file.uri, key);
+    if (!inspected.check.ok || !inspected.key || !inspected.privateUri)
+      throw new Error("cannot send a rejected file");
+    const key = inspected.key;
+    const localCopyUri = inspected.privateUri;
     const op: Operation = {
       key,
       fileName: inspected.file.name,
       size: inspected.size,
       format: inspected.check.format,
       localCopyUri,
-      phase: 'sending',
+      phase: "sending",
       jobId: null,
       job: null,
       deleteKey: null,
@@ -85,16 +108,17 @@ export class ImportController {
   async resume(): Promise<Operation | null> {
     const op = await this.d.store.load();
     if (!op) return null;
-    if (op.phase === 'sending' || op.phase === 'uncertain') return this.findByKey(op);
-    if (op.phase === 'created') return this.refresh();
+    if (op.phase === "sending" || op.phase === "uncertain")
+      return this.findByKey(op);
+    if (op.phase === "created") return this.refresh();
     return op;
   }
 
   /** User action after an uncertain POST: the same key with the same bytes. */
   async retrySend(): Promise<Operation | null> {
     const op = await this.d.store.load();
-    if (!op || op.phase !== 'uncertain' || !op.localCopyUri) return op;
-    const sending = { ...op, phase: 'sending' as const, error: null };
+    if (!op || op.phase !== "uncertain" || !op.localCopyUri) return op;
+    const sending = { ...op, phase: "sending" as const, error: null };
     await this.d.store.save(sending);
     return this.send(sending);
   }
@@ -102,24 +126,41 @@ export class ImportController {
   /** User action: ask the server again by key (no upload). */
   async checkByKey(): Promise<Operation | null> {
     const op = await this.d.store.load();
-    if (!op || (op.phase !== 'uncertain' && op.phase !== 'sending')) return op;
+    if (!op || (op.phase !== "uncertain" && op.phase !== "sending")) return op;
     return this.findByKey(op);
   }
 
   async refresh(): Promise<Operation | null> {
+    return (await this.poll()).op;
+  }
+
+  /**
+   * One status check. `reachable: false` means the server could not be asked (network) or answered
+   * in an unexpected shape - the caller backs off instead of polling at a fixed rate.
+   */
+  async poll(): Promise<{ op: Operation | null; reachable: boolean }> {
     const op = await this.d.store.load();
-    if (!op || !op.jobId) return op;
+    if (!op || !op.jobId) return { op, reachable: true };
     try {
       const res = await this.d.api.getJob(op.jobId);
-      if (res.kind !== 'found') return op;
+      if (res.kind !== "found")
+        return { op, reachable: res.kind === "not_found" };
       const next = applyView(op, res.view);
       if (next === op) {
-        this.d.log('stale_response_ignored', { jobId: op.jobId, status: res.view.status, revision: res.view.revision });
-        return op;
+        this.d.log("stale_response_ignored", {
+          jobId: op.jobId,
+          status: res.view.status,
+          revision: res.view.revision,
+        });
+        return { op, reachable: true };
       }
-      return this.persist(next);
-    } catch {
-      return op;
+      return { op: await this.persist(next), reachable: true };
+    } catch (e) {
+      this.d.log("poll_failed", {
+        jobId: op.jobId,
+        reason: e instanceof ResponseFormatError ? "bad_response" : "network",
+      });
+      return { op, reachable: false };
     }
   }
 
@@ -127,18 +168,26 @@ export class ImportController {
   async requestDelete(): Promise<Operation | null> {
     const stored = await this.d.store.load();
     if (!stored || !stored.jobId) return stored;
-    const op = stored.deleteKey ? stored : await this.persist({ ...stored, deleteKey: this.d.newKey() });
+    const op = stored.deleteKey
+      ? stored
+      : await this.persist({ ...stored, deleteKey: this.d.newKey() });
     try {
-      const res = await this.d.api.remove(op.jobId as string, op.deleteKey as string);
-      if (res.kind === 'accepted') {
-        this.d.log('delete_accepted', { jobId: op.jobId, status: res.view.status });
+      const res = await this.d.api.remove(
+        op.jobId as string,
+        op.deleteKey as string,
+      );
+      if (res.kind === "accepted") {
+        this.d.log("delete_accepted", {
+          jobId: op.jobId,
+          status: res.view.status,
+        });
         return this.persist({ ...applyView(op, res.view), deleteError: null });
       }
-      this.d.log('delete_failed', { jobId: op.jobId, httpStatus: res.status });
+      this.d.log("delete_failed", { jobId: op.jobId, httpStatus: res.status });
       return this.persist({ ...op, deleteError: `server_${res.status}` });
     } catch {
-      this.d.log('delete_failed', { jobId: op.jobId, reason: 'network' });
-      return this.persist({ ...op, deleteError: 'network' });
+      this.d.log("delete_failed", { jobId: op.jobId, reason: "network" });
+      return this.persist({ ...op, deleteError: "network" });
     }
   }
 
@@ -153,34 +202,57 @@ export class ImportController {
     if (!op.localCopyUri) return this.findByKey(op);
     try {
       const res = await this.d.api.create(op.key, op.fileName, op.localCopyUri);
-      if (res.kind === 'accepted') {
-        this.d.log('import_created', { jobId: res.view.jobId, status: res.view.status, revision: res.view.revision });
+      if (res.kind === "accepted") {
+        this.d.log("import_created", {
+          jobId: res.view.jobId,
+          status: res.view.status,
+          revision: res.view.revision,
+        });
         return this.dropCopy(applyView({ ...op, error: null }, res.view));
       }
-      if (res.kind === 'server_error') {
-        this.d.log('import_uncertain', { httpStatus: res.status });
-        return this.findByKey(await this.persist({ ...op, phase: 'uncertain' }));
+      if (res.kind === "server_error") {
+        this.d.log("import_uncertain", { httpStatus: res.status });
+        return this.findByKey(
+          await this.persist({ ...op, phase: "uncertain" }),
+        );
       }
-      const error = res.kind === 'conflict' ? 'key_conflict' : `rejected_${res.status}`;
-      this.d.log('import_rejected', { reason: error });
-      return this.dropCopy({ ...op, phase: 'failed', error });
-    } catch {
-      // No answer: the job may or may not exist. Ask by key instead of re-sending.
-      this.d.log('import_no_answer', { phase: 'uncertain' });
-      return this.findByKey(await this.persist({ ...op, phase: 'uncertain' }));
+      const error =
+        res.kind === "conflict" ? "key_conflict" : `rejected_${res.status}`;
+      this.d.log("import_rejected", { reason: error });
+      return this.dropCopy({ ...op, phase: "failed", error });
+    } catch (e) {
+      // A 202 in an unknown shape still means the server took the file; no answer means it may or may
+      // not have. Either way: look the job up by key, never re-send on our own.
+      const reason =
+        e instanceof ResponseFormatError ? "bad_response" : "no_answer";
+      this.d.log("import_uncertain", { reason });
+      return this.findByKey(await this.persist({ ...op, phase: "uncertain" }));
     }
   }
 
   private async findByKey(op: Operation): Promise<Operation> {
     try {
       const res = await this.d.api.findByKey(op.key);
-      if (res.kind === 'found') {
-        this.d.log('import_recovered', { jobId: res.view.jobId, status: res.view.status, revision: res.view.revision });
+      if (res.kind === "found") {
+        this.d.log("import_recovered", {
+          jobId: res.view.jobId,
+          status: res.view.status,
+          revision: res.view.revision,
+        });
         return this.dropCopy(applyView({ ...op, error: null }, res.view));
       }
-      return this.persist({ ...op, phase: 'uncertain', error: res.kind === 'not_found' ? 'not_found_yet' : `lookup_${res.status}` });
-    } catch {
-      return this.persist({ ...op, phase: 'uncertain', error: 'network' });
+      return this.persist({
+        ...op,
+        phase: "uncertain",
+        error:
+          res.kind === "not_found" ? "not_found_yet" : `lookup_${res.status}`,
+      });
+    } catch (e) {
+      return this.persist({
+        ...op,
+        phase: "uncertain",
+        error: e instanceof ResponseFormatError ? "bad_response" : "network",
+      });
     }
   }
 
@@ -190,8 +262,15 @@ export class ImportController {
     return this.persist({ ...op, localCopyUri: null });
   }
 
+  /**
+   * Saves the operation without the report items: transaction data is not kept at rest on the device.
+   * After a relaunch the ready report is fetched again from the server.
+   */
   private async persist(op: Operation): Promise<Operation> {
-    await this.d.store.save(op);
+    const atRest = op.job?.items
+      ? { ...op, job: { ...op.job, items: undefined } }
+      : op;
+    await this.d.store.save(atRest);
     return op;
   }
 }

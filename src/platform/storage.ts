@@ -1,8 +1,8 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { OperationStore } from '../core/controller';
-import type { Operation } from '../core/types';
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import type { OperationStore } from "../core/controller";
+import type { Operation } from "../core/types";
 
-const KEY = 'kelpie.import.v1';
+const KEY = "kelpie.import.v1";
 
 export const deviceStore: OperationStore = {
   async load() {

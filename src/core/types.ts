@@ -1,6 +1,13 @@
-import { z } from 'zod';
+import { z } from "zod";
 
-export const JobStatusSchema = z.enum(['queued', 'processing', 'ready', 'deleting', 'deleted', 'error']);
+export const JobStatusSchema = z.enum([
+  "queued",
+  "processing",
+  "ready",
+  "deleting",
+  "deleted",
+  "error",
+]);
 export type JobStatus = z.infer<typeof JobStatusSchema>;
 
 export const RecurringItemSchema = z.object({
@@ -28,16 +35,16 @@ export type JobView = z.infer<typeof JobViewSchema>;
  * Never holds file bytes; `fileName` stays on the device and is never logged.
  */
 export type Phase =
-  | 'sending' // POST may be in flight or its answer was lost
-  | 'uncertain' // POST outcome unknown and the job was not found by key yet
-  | 'created' // the server has the job
-  | 'failed'; // the server refused the upload (409 / 4xx)
+  | "sending" // POST may be in flight or its answer was lost
+  | "uncertain" // POST outcome unknown and the job was not found by key yet
+  | "created" // the server has the job
+  | "failed"; // the server refused the upload (409 / 4xx)
 
 export type Operation = {
   key: string;
   fileName: string;
   size: number;
-  format: 'pdf' | 'csv';
+  format: "pdf" | "csv";
   localCopyUri: string | null;
   phase: Phase;
   jobId: string | null;

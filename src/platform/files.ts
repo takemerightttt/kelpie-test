@@ -1,10 +1,10 @@
-import { Directory, File, Paths } from 'expo-file-system';
-import type { FileStore } from '../core/controller';
+import { Directory, File, Paths } from "expo-file-system";
+import type { FileStore } from "../core/controller";
 
 // Private import copies live in the app's own documents folder, so a pending
 // retry survives a relaunch, and are deleted as soon as the server has the job,
 // on reject, on cancel and on reset.
-const importsDir = () => new Directory(Paths.document, 'imports');
+const importsDir = () => new Directory(Paths.document, "imports");
 
 export const deviceFiles: FileStore = {
   async inspect(uri, headBytes) {
