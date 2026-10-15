@@ -66,16 +66,17 @@ export class ImportsApi {
     fileName: string,
     fileUri: string,
   ): Promise<CreateResult> {
-    const res = await this.http.uploadFile("/imports", fileUri, {
+    const response = await this.http.uploadFile("/imports", fileUri, {
       "Content-Type": "application/octet-stream",
       "Idempotency-Key": key,
       "X-File-Name": fileName,
     });
-    if (res.status === 202)
-      return { kind: "accepted", view: parseView(res.body) };
-    if (res.status === 409) return { kind: "conflict" };
-    if (res.status >= 500) return { kind: "server_error", status: res.status };
-    return { kind: "rejected", status: res.status };
+    if (response.status === 202)
+      return { kind: "accepted", view: parseView(response.body) };
+    if (response.status === 409) return { kind: "conflict" };
+    if (response.status >= 500)
+      return { kind: "server_error", status: response.status };
+    return { kind: "rejected", status: response.status };
   }
 
   async findByKey(key: string): Promise<FetchResult> {
@@ -87,14 +88,14 @@ export class ImportsApi {
   }
 
   async remove(jobId: string, deleteKey: string): Promise<DeleteResult> {
-    const res = await this.http.request(
+    const response = await this.http.request(
       "DELETE",
       `/imports/${encodeURIComponent(jobId)}`,
       { "Idempotency-Key": deleteKey },
     );
-    if (res.status === 202)
-      return { kind: "accepted", view: parseView(res.body) };
-    return { kind: "failed", status: res.status };
+    if (response.status === 202)
+      return { kind: "accepted", view: parseView(response.body) };
+    return { kind: "failed", status: response.status };
   }
 
   // Test-control routes of the mock - used by the diagnostics screen only.
@@ -109,15 +110,21 @@ export class ImportsApi {
     );
   }
 
+  /** Wipes every job and counter on the mock. */
+  async resetMock(): Promise<void> {
+    await this.http.request("POST", "/__test/reset");
+  }
+
   async mockState(): Promise<MockState> {
-    const res = await this.http.request("GET", "/__test/state");
-    return JSON.parse(res.body) as MockState;
+    const response = await this.http.request("GET", "/__test/state");
+    return JSON.parse(response.body) as MockState;
   }
 
   private async fetchView(path: string): Promise<FetchResult> {
-    const res = await this.http.request("GET", path);
-    if (res.status === 200) return { kind: "found", view: parseView(res.body) };
-    if (res.status === 404) return { kind: "not_found" };
-    return { kind: "error", status: res.status };
+    const response = await this.http.request("GET", path);
+    if (response.status === 200)
+      return { kind: "found", view: parseView(response.body) };
+    if (response.status === 404) return { kind: "not_found" };
+    return { kind: "error", status: response.status };
   }
 }

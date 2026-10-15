@@ -1,15 +1,16 @@
-import { Text } from "react-native";
-import type { Operation } from "../core/types";
-import type { ImportActions } from "./actions";
-import { Button, Card } from "./components";
-import { styles } from "./styles";
+import { StyleSheet, Text } from "react-native";
+import type { Operation } from "@/core/types";
+import { Button } from "@/ui/Button";
+import { Card } from "@/ui/Card";
+import { colors, type } from "@/ui/theme";
+import type { ImportActions } from "../useImport";
 
 export function UncertainCard({
-  op,
+  operation,
   busy,
   actions,
 }: {
-  op: Operation;
+  operation: Operation;
   busy: boolean;
   actions: ImportActions;
 }) {
@@ -25,7 +26,7 @@ export function UncertainCard({
         onPress={actions.checkByKey}
         disabled={busy}
       />
-      {op.localCopyUri ? (
+      {operation.localCopyUri ? (
         <Button
           label="Send the same file again"
           kind="secondary"
@@ -42,3 +43,7 @@ export function UncertainCard({
     </Card>
   );
 }
+
+const styles = StyleSheet.create({
+  text: { color: colors.text, fontSize: type.body },
+});

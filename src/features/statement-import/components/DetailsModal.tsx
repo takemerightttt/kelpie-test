@@ -1,8 +1,10 @@
-import { Modal, View } from "react-native";
-import { formatMoney } from "../core/rules";
-import type { RecurringItem } from "../core/types";
-import { Button, Card, Row } from "./components";
-import { styles } from "./styles";
+import { Modal, StyleSheet, View } from "react-native";
+import { formatMoney } from "@/core/rules";
+import type { RecurringItem } from "@/core/types";
+import { Button } from "@/ui/Button";
+import { Card } from "@/ui/Card";
+import { Row } from "@/ui/Row";
+import { colors, spacing } from "@/ui/theme";
 
 export function DetailsModal({
   item,
@@ -20,7 +22,7 @@ export function DetailsModal({
       animationType="fade"
       onRequestClose={onClose}
     >
-      <View style={styles.modalBackdrop}>
+      <View style={styles.backdrop}>
         {item ? (
           <Card title={item.merchant}>
             <Row
@@ -36,3 +38,12 @@ export function DetailsModal({
     </Modal>
   );
 }
+
+const styles = StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    backgroundColor: colors.overlay,
+    justifyContent: "center",
+    padding: spacing.large,
+  },
+});

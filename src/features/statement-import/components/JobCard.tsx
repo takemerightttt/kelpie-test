@@ -1,7 +1,8 @@
-import { isServerDeleted } from "../core/rules";
-import type { Operation, RecurringItem } from "../core/types";
-import type { ImportActions } from "./actions";
-import { Button, Card } from "./components";
+import { isServerDeleted } from "@/core/rules";
+import type { Operation, RecurringItem } from "@/core/types";
+import { Button } from "@/ui/Button";
+import { Card } from "@/ui/Card";
+import type { ImportActions } from "../useImport";
 import { DeleteState } from "./DeleteState";
 import { ReportCard } from "./ReportCard";
 
@@ -15,28 +16,33 @@ const STATUS_TEXT: Record<string, string> = {
 };
 
 export function JobCard({
-  op,
+  operation,
   busy,
   actions,
   onDetails,
 }: {
-  op: Operation;
+  operation: Operation;
   busy: boolean;
   actions: ImportActions;
   onDetails: (item: RecurringItem) => void;
 }) {
-  const job = op.job;
-  const deleted = isServerDeleted(op);
+  const job = operation.job;
+  const deleted = isServerDeleted(operation);
   return (
     <Card
       title={
         job ? (STATUS_TEXT[job.status] ?? job.status) : "Waiting for the server"
       }
     >
-      {job?.status === "ready" && !op.deleteKey ? (
-        <ReportCard op={op} onDetails={onDetails} />
+      {job?.status === "ready" && !operation.deleteKey ? (
+        <ReportCard operation={operation} onDetails={onDetails} />
       ) : null}
-      <DeleteState op={op} busy={busy} deleted={deleted} actions={actions} />
+      <DeleteState
+        operation={operation}
+        busy={busy}
+        deleted={deleted}
+        actions={actions}
+      />
       {!deleted ? (
         <Button
           label="Refresh"

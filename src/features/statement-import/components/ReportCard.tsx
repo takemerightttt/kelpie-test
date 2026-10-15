@@ -1,18 +1,18 @@
-import { Text, View } from "react-native";
-import { formatMoney, monthlyTotalMinor } from "../core/rules";
-import type { Operation, RecurringItem } from "../core/types";
-import { Row } from "./components";
+import { StyleSheet, Text, View } from "react-native";
+import { formatMoney, monthlyTotalMinor } from "@/core/rules";
+import type { Operation, RecurringItem } from "@/core/types";
+import { Row } from "@/ui/Row";
+import { colors, spacing, type } from "@/ui/theme";
 import { ReportItemsList } from "./ReportItemsList";
-import { styles } from "./styles";
 
 export function ReportCard({
-  op,
+  operation,
   onDetails,
 }: {
-  op: Operation;
+  operation: Operation;
   onDetails: (item: RecurringItem) => void;
 }) {
-  const job = op.job;
+  const job = operation.job;
   if (!job?.items) return null;
   const currency = job.currency ?? "";
   return (
@@ -32,3 +32,8 @@ export function ReportCard({
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  report: { gap: spacing.small },
+  text: { color: colors.text, fontSize: type.body },
+});

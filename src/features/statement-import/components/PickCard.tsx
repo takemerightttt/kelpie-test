@@ -1,6 +1,7 @@
-import { Text } from "react-native";
-import { Button, Card } from "./components";
-import { styles } from "./styles";
+import { StyleSheet, Text } from "react-native";
+import { Button } from "@/ui/Button";
+import { Card } from "@/ui/Card";
+import { colors, type } from "@/ui/theme";
 
 export function PickCard({
   busy,
@@ -19,3 +20,7 @@ export function PickCard({
     </Card>
   );
 }
+
+const styles = StyleSheet.create({
+  text: { color: colors.text, fontSize: type.body },
+});

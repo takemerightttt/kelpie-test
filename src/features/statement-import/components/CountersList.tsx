@@ -1,5 +1,5 @@
-import type { MockState } from "../core/api";
-import { Row } from "./components";
+import type { MockState } from "@/core/api";
+import { Row } from "@/ui/Row";
 
 export function CountersList({ state }: { state: MockState | null }) {
   if (!state) return null;

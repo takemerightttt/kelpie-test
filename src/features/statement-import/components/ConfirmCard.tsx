@@ -1,5 +1,7 @@
-import type { Inspected } from "../core/controller";
-import { Button, Card, Row } from "./components";
+import type { Inspected } from "@/core/controller";
+import { Button } from "@/ui/Button";
+import { Card } from "@/ui/Card";
+import { Row } from "@/ui/Row";
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;

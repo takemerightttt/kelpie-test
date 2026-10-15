@@ -27,6 +27,12 @@ export type SafeFields = {
   path?: PathTemplate;
   errorKind?: HttpErrorKind;
   durationMs?: number;
+  mode?: "happy" | "lost_ack" | "stale_status" | "delete_failure";
+  createRequests?: number;
+  newJobs?: number;
+  duplicateHits?: number;
+  deleteRequests?: number;
+  state?: "active" | "background";
 };
 
 export type SafeLog = (event: string, fields?: SafeFields) => void;

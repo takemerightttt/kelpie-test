@@ -1,4 +1,4 @@
-import type { RecurringItem } from "../core/types";
+import type { RecurringItem } from "@/core/types";
 import { ReportItemRow } from "./ReportItemRow";
 
 export function ReportItemsList({

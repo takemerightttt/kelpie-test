@@ -9,15 +9,14 @@ export const colors = {
   textStrong: "#111",
   text: "#222",
   textMuted: "#555",
-  textHint: "#666",
   onPrimary: "#fff",
 };
 
 export const spacing = {
-  xs: 4,
-  sm: 8,
-  md: 12,
-  lg: 16,
+  extraSmall: 4,
+  small: 8,
+  medium: 12,
+  large: 16,
   screenTop: 56,
 };
 
@@ -26,4 +25,24 @@ export const radius = {
   card: 12,
 };
 
-export const theme = { colors, spacing, radius };
+export const type = {
+  title: 24,
+  heading: 18,
+  button: 16,
+  body: 15,
+};
+
+export const weight = {
+  medium: "500",
+  semibold: "600",
+  bold: "700",
+} as const;
+
+export const size = {
+  touchTarget: 48,
+  hairline: 1,
+};
+
+export const opacity = {
+  dim: 0.6,
+};

@@ -1,4 +1,4 @@
-import { Button } from "./components";
+import { Button } from "@/ui/Button";
 import type { Scenario } from "./ScenarioList";
 
 export function ScenarioButton({
