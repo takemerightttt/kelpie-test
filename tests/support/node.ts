@@ -19,8 +19,8 @@ import type { Http, HttpResult } from "../../src/core/api";
 import type { FileStore, OperationStore } from "../../src/core/controller";
 import type { Operation } from "../../src/core/types";
 
-export const KIT_DIR = resolve(__dirname, "../../mock-kit");
-export const FIXTURES = join(KIT_DIR, "fixtures");
+export const KIT_DIRECTORY = resolve(__dirname, "../../mock-kit");
+export const FIXTURES = join(KIT_DIRECTORY, "fixtures");
 
 export class NodeHttp implements Http {
   constructor(private readonly base: string) {}
@@ -31,12 +31,12 @@ export class NodeHttp implements Http {
     headers: Record<string, string> = {},
     json?: unknown,
   ): Promise<HttpResult> {
-    const res = await fetch(this.base + path, {
+    const response = await fetch(this.base + path, {
       method,
       headers,
       body: json === undefined ? undefined : JSON.stringify(json),
     });
-    return { status: res.status, body: await res.text() };
+    return { status: response.status, body: await response.text() };
   }
 
   async uploadFile(
@@ -44,32 +44,32 @@ export class NodeHttp implements Http {
     fileUri: string,
     headers: Record<string, string>,
   ): Promise<HttpResult> {
-    const res = await fetch(this.base + path, {
+    const response = await fetch(this.base + path, {
       method: "POST",
       headers,
       body: readFileSync(fileUri),
     });
-    return { status: res.status, body: await res.text() };
+    return { status: response.status, body: await response.text() };
   }
 }
 
 export class NodeFiles implements FileStore {
-  readonly dir = mkdtempSync(join(tmpdir(), "kelpie-private-"));
+  readonly directory = mkdtempSync(join(tmpdir(), "kelpie-private-"));
 
   async inspect(uri: string, headBytes: number) {
     const size = statSync(uri).size;
     const head = Buffer.alloc(Math.min(headBytes, size));
-    const fd = openSync(uri, "r");
+    const fileDescriptor = openSync(uri, "r");
     try {
-      readSync(fd, head, 0, head.length, 0);
+      readSync(fileDescriptor, head, 0, head.length, 0);
     } finally {
-      closeSync(fd);
+      closeSync(fileDescriptor);
     }
     return { size, head: new Uint8Array(head) };
   }
 
   async keepPrivate(uri: string, key: string): Promise<string> {
-    const target = join(this.dir, key);
+    const target = join(this.directory, key);
     renameSync(uri, target); // a move, like the device adapter
     return target;
   }
@@ -81,8 +81,8 @@ export class NodeFiles implements FileStore {
 
 /** Simulates the picker: a temporary copy of a fixture the controller may delete. */
 export function pickFixture(name: string): { uri: string; name: string } {
-  const dir = mkdtempSync(join(tmpdir(), "kelpie-picked-"));
-  const uri = join(dir, name);
+  const directory = mkdtempSync(join(tmpdir(), "kelpie-picked-"));
+  const uri = join(directory, name);
   copyFileSync(join(FIXTURES, name), uri);
   return { uri, name };
 }
@@ -93,8 +93,8 @@ export class MemoryStore implements OperationStore {
   async load(): Promise<Operation | null> {
     return this.value ? (JSON.parse(this.value) as Operation) : null;
   }
-  async save(op: Operation | null): Promise<void> {
-    this.value = op ? JSON.stringify(op) : null;
+  async save(operation: Operation | null): Promise<void> {
+    this.value = operation ? JSON.stringify(operation) : null;
   }
 }
 
@@ -106,17 +106,17 @@ export async function startMock(): Promise<{
 }> {
   const port = 18000 + Math.floor(Math.random() * 2000);
   const child: ChildProcess = spawn(process.execPath, ["mock-server.mjs"], {
-    cwd: KIT_DIR,
+    cwd: KIT_DIRECTORY,
     env: { ...process.env, PORT: String(port) },
     stdio: "pipe",
   });
   const base = `http://127.0.0.1:${port}`;
-  for (let i = 0; i < 100; i += 1) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
     try {
-      const res = await fetch(`${base}/health`);
-      if (res.ok) break;
+      const response = await fetch(`${base}/health`);
+      if (response.ok) break;
     } catch {
-      await new Promise((r) => setTimeout(r, 50));
+      await new Promise((resolveWait) => setTimeout(resolveWait, 50));
     }
   }
   await fetch(`${base}/__test/reset`, { method: "POST" });
@@ -124,22 +124,22 @@ export async function startMock(): Promise<{
     base,
     stop: async () => {
       child.kill();
-      rmSync(join(KIT_DIR, ".mock-state.json"), { force: true });
+      rmSync(join(KIT_DIRECTORY, ".mock-state.json"), { force: true });
     },
   };
 }
 
-export async function until<T>(
-  fn: () => Promise<T>,
-  done: (v: T) => boolean,
+export async function until<Result>(
+  probe: () => Promise<Result>,
+  done: (value: Result) => boolean,
   timeoutMs = 5000,
-): Promise<T> {
+): Promise<Result> {
   const start = Date.now();
   for (;;) {
-    const v = await fn();
-    if (done(v)) return v;
+    const value = await probe();
+    if (done(value)) return value;
     if (Date.now() - start > timeoutMs)
       throw new Error("condition not reached in time");
-    await new Promise((r) => setTimeout(r, 100));
+    await new Promise((resolveWait) => setTimeout(resolveWait, 100));
   }
 }

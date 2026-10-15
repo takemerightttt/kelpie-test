@@ -18,8 +18,8 @@ const CSV_HEADER = "date,description,amount\n";
 
 function asciiPrefix(head: Uint8Array, length: number): string {
   let out = "";
-  for (let i = 0; i < Math.min(length, head.length); i += 1)
-    out += String.fromCharCode(head[i]);
+  for (let index = 0; index < Math.min(length, head.length); index += 1)
+    out += String.fromCharCode(head[index]);
   return out;
 }
 

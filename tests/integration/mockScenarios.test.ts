@@ -11,7 +11,7 @@ import {
   NodeFiles,
   NodeHttp,
   FIXTURES,
-  KIT_DIR,
+  KIT_DIRECTORY,
   newKey,
   pickFixture,
   startMock,
@@ -33,7 +33,7 @@ function controller(store = new MemoryStore(), files = new NodeFiles()) {
 
 beforeAll(() => {
   if (!existsSync(join(FIXTURES, "oversize.csv")))
-    execFileSync(process.execPath, ["make-oversize.mjs"], { cwd: KIT_DIR });
+    execFileSync(process.execPath, ["make-oversize.mjs"], { cwd: KIT_DIRECTORY });
 });
 
 beforeEach(async () => {
@@ -66,7 +66,7 @@ describe("acceptance matrix against the mock", () => {
     const state = await api.mockState();
     expect(state.stats).toMatchObject({ createRequests: 1, newJobs: 1 });
     expect(state.stats.acceptedBytes).toBeGreaterThan(0);
-    expect(readdirSync(files.dir)).toEqual([]); // private copy removed once the server has the job
+    expect(readdirSync(files.directory)).toEqual([]); // private copy removed once the server has the job
   });
 
   it("happy with the PDF fixture too", async () => {
@@ -191,7 +191,7 @@ describe("acceptance matrix against the mock", () => {
     expect(existsSync(inspected.privateUri!)).toBe(true);
     expect(existsSync(picked.uri)).toBe(false); // the cache copy is no longer relied on
     await c.discard(inspected);
-    expect(readdirSync(files.dir)).toEqual([]);
+    expect(readdirSync(files.directory)).toEqual([]);
   });
 
   it("report items are not stored at rest; a relaunch fetches them again", async () => {
