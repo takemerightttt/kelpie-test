@@ -58,6 +58,22 @@ function parseView(body: string): JobView {
   }
 }
 
+const MAX_FILE_NAME = 255;
+
+/**
+ * Header values must be ASCII (OkHttp on Android throws otherwise), so the name is
+ * percent-encoded; whole characters are dropped from the end until it fits the server's limit.
+ */
+export function fileNameHeader(fileName: string): string {
+  const characters = Array.from(fileName);
+  let encoded = encodeURIComponent(fileName);
+  while (encoded.length > MAX_FILE_NAME && characters.length > 1) {
+    characters.pop();
+    encoded = encodeURIComponent(characters.join(""));
+  }
+  return encoded;
+}
+
 export class ImportsApi {
   constructor(private readonly http: Http) {}
 
@@ -69,7 +85,7 @@ export class ImportsApi {
     const response = await this.http.uploadFile("/imports", fileUri, {
       "Content-Type": "application/octet-stream",
       "Idempotency-Key": key,
-      "X-File-Name": fileName,
+      "X-File-Name": fileNameHeader(fileName),
     });
     if (response.status === 202)
       return { kind: "accepted", view: parseView(response.body) };
