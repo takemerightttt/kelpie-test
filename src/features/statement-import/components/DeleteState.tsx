@@ -4,6 +4,15 @@ import { Button } from "@/ui/Button";
 import { colors, type } from "@/ui/theme";
 import type { ImportActions } from "../useImport";
 
+/** Shown above the report: a failed delete leaves the data on the server and on screen. */
+export function DeleteError({ operation }: { operation: Operation }) {
+  return operation.deleteError ? (
+    <Text style={styles.error}>
+      Deletion failed - your data is still on the server. Try again.
+    </Text>
+  ) : null;
+}
+
 export function DeleteState({
   operation,
   busy,
@@ -17,11 +26,6 @@ export function DeleteState({
 }) {
   return (
     <>
-      {operation.deleteError ? (
-        <Text style={styles.error}>
-          Deletion failed - your data is still on the server. Try again.
-        </Text>
-      ) : null}
       {operation.job?.status === "ready" ? (
         <Button
           label={operation.deleteKey ? "Retry deletion" : "Delete this import"}
@@ -30,7 +34,9 @@ export function DeleteState({
           disabled={busy}
         />
       ) : null}
-      {operation.deleteError !== null && (
+      {deleted ? (
+        <Button label="New import" onPress={actions.reset} disabled={busy} />
+      ) : (
         <Button
           label="Start over"
           kind="secondary"
@@ -38,9 +44,6 @@ export function DeleteState({
           disabled={busy}
         />
       )}
-      {deleted ? (
-        <Button label="New import" onPress={actions.reset} disabled={busy} />
-      ) : null}
     </>
   );
 }

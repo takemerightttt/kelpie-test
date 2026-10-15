@@ -23,6 +23,7 @@ export async function pickStatement(): Promise<{
 }
 
 export function rejectNotice(check: Extract<FileCheck, { ok: false }>): string {
+  if (check.reason === "empty") return "This file is empty.";
   return check.reason === "too_large"
     ? "This file is larger than 10 MiB."
     : "This is not a PDF or CSV statement.";

@@ -11,6 +11,7 @@ import { deviceHttp } from "@/platform/http";
 import { deviceStore } from "@/platform/storage";
 import { pickStatement, rejectNotice } from "./pickStatement";
 import { useJobSync } from "./useJobSync";
+import { useStillDeleting } from "./useStillDeleting";
 
 export function useImport() {
   const api = useMemo(
@@ -38,6 +39,7 @@ export function useImport() {
     { setOperation, setBusy, setNotice },
     consoleLog,
   );
+  const stillDeleting = useStillDeleting(operation);
 
   const run = useCallback(
     async (task: () => Promise<Operation | null | void>) => {
@@ -86,7 +88,9 @@ export function useImport() {
       notice ??
       (failures > 0 && operation && needsPolling(operation)
         ? "Server not reachable - retrying."
-        : null),
+        : stillDeleting
+          ? "Still deleting - the server has not confirmed yet"
+          : null),
     pick,
     confirm: withPending((inspected) => controller.confirm(inspected)),
     cancel: withPending((inspected) => controller.discard(inspected)),

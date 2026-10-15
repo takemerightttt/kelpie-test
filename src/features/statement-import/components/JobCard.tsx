@@ -3,7 +3,7 @@ import type { Operation, RecurringItem } from "@/core/types";
 import { Button } from "@/ui/Button";
 import { Card } from "@/ui/Card";
 import type { ImportActions } from "../useImport";
-import { DeleteState } from "./DeleteState";
+import { DeleteError, DeleteState } from "./DeleteState";
 import { ReportCard } from "./ReportCard";
 
 const STATUS_TEXT: Record<string, string> = {
@@ -34,7 +34,8 @@ export function JobCard({
         job ? (STATUS_TEXT[job.status] ?? job.status) : "Waiting for the server"
       }
     >
-      {job?.status === "ready" && !operation.deleteKey ? (
+      <DeleteError operation={operation} />
+      {job?.status === "ready" ? (
         <ReportCard operation={operation} onDetails={onDetails} />
       ) : null}
       <DeleteState

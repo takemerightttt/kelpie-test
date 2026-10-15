@@ -30,14 +30,16 @@ export function useJobSync(
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    const resume = () =>
-      controller
+    const resume = () => {
+      setBusy(true); // Delete / Refresh stay disabled while the GET runs
+      return controller
         .resume()
         .then(setOperation)
         .catch(() =>
           setNotice("Could not reach the server. Tap Refresh to try again."),
         )
         .finally(() => setBusy(false));
+    };
     log("relaunch_resume");
     void resume();
     const subscription = AppState.addEventListener("change", (state) => {
