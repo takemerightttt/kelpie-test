@@ -23,6 +23,7 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
+      "allowBackup": false,
       "package": "com.kuliaev.kelpiestatementimport",
       "blockedPermissions": [
         "android.permission.READ_EXTERNAL_STORAGE",

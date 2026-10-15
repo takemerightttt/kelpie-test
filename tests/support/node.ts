@@ -7,6 +7,7 @@ import {
   mkdtempSync,
   openSync,
   readSync,
+  readdirSync,
   renameSync,
   rmSync,
   statSync,
@@ -76,6 +77,17 @@ export class NodeFiles implements FileStore {
 
   async remove(uri: string): Promise<void> {
     rmSync(uri, { force: true });
+  }
+
+  async listPrivate(): Promise<string[]> {
+    return readdirSync(this.directory).map((name) =>
+      join(this.directory, name),
+    );
+  }
+
+  /** Node has no OS picker, so there are no system copies. */
+  async removeSystemCopies(): Promise<void> {
+    return undefined;
   }
 }
 

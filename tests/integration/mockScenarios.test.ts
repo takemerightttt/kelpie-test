@@ -119,7 +119,8 @@ describe("acceptance matrix against the mock", () => {
       ),
     });
     await api.setScenario("happy");
-    const retried = await controller.retrySend();
+    // Relaunch: a new controller reads the edited storage instead of its operation in memory.
+    const retried = await createController(store).controller.retrySend();
     expect(retried?.jobId).toBe("job-demo-001");
     const state = await api.mockState();
     expect(state.stats).toMatchObject({ newJobs: 1, duplicateHits: 1 });

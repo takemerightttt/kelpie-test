@@ -17,6 +17,10 @@ export interface FileStore {
   keepPrivate(uri: string, key: string): Promise<string>;
   /** Deletes a private copy; missing files are fine. */
   remove(uri: string): Promise<void>;
+  /** URIs of every file in the private import folder. */
+  listPrivate(): Promise<string[]>;
+  /** Removes copies the OS picker left outside our control (iOS Inbox). No-op where there are none. */
+  removeSystemCopies(): Promise<void>;
 }
 
 export interface OperationStore {
@@ -50,16 +54,142 @@ export type Inspected = {
  * resumes from storage. Nothing here re-sends a file on its own: after a lost
  * answer the job is looked up by its key, and a second POST happens only when
  * the user presses "retry" - with the same key and the same bytes.
+ *
+ * Public methods run one at a time on a queue: a poll in flight and a delete, or a foreground
+ * resume and an upload, never interleave their reads and writes of the operation.
  */
 export class ImportController {
+  private queue: Promise<unknown> = Promise.resolve();
+  /** The full operation, report items included; undefined until the store has been read. */
+  private live: Operation | null | undefined = undefined;
+  /** Copies made by inspect() that wait on the confirmation screen; the sweep keeps them. */
+  private readonly awaitingConfirm = new Set<string>();
+
   constructor(private readonly deps: Dependencies) {}
 
-  async current(): Promise<Operation | null> {
-    return this.deps.store.load();
+  current(): Promise<Operation | null> {
+    return this.run(() => this.load());
   }
 
   /** Local validation before anything leaves the device. Rejected files are deleted right away. */
-  async inspect(file: PickedFile): Promise<Inspected> {
+  inspect(file: PickedFile): Promise<Inspected> {
+    return this.run(() => this.inspectFile(file));
+  }
+
+  /** The user cancelled on the confirmation screen. */
+  discard(inspected: Inspected): Promise<void> {
+    return this.run(async () => {
+      if (inspected.privateUri)
+        this.awaitingConfirm.delete(inspected.privateUri);
+      await this.deps.files.remove(inspected.privateUri ?? inspected.file.uri);
+    });
+  }
+
+  /** Confirmed: the key is created and stored before the first byte is sent. */
+  confirm(inspected: Inspected): Promise<Operation> {
+    return this.run(() => this.confirmFile(inspected));
+  }
+
+  /** On app start and on foreground: show the real job state, never re-send. */
+  resume(): Promise<Operation | null> {
+    return this.run(async () => {
+      const operation = await this.load();
+      await this.sweep(operation);
+      await this.removeSystemCopies();
+      if (!operation) return null;
+      if (operation.phase === "sending" || operation.phase === "uncertain")
+        return this.findByKey(operation);
+      if (operation.phase === "created")
+        return (await this.pollJob()).operation;
+      return operation;
+    });
+  }
+
+  /** User action after an uncertain POST: the same key with the same bytes. */
+  retrySend(): Promise<Operation | null> {
+    return this.run(async () => {
+      const operation = await this.load();
+      if (
+        !operation ||
+        operation.phase !== "uncertain" ||
+        !operation.localCopyUri
+      )
+        return operation;
+      return this.send(
+        await this.persist({ ...operation, phase: "sending", error: null }),
+      );
+    });
+  }
+
+  /** User action: ask the server again by key (no upload). */
+  checkByKey(): Promise<Operation | null> {
+    return this.run(async () => {
+      const operation = await this.load();
+      if (
+        !operation ||
+        (operation.phase !== "uncertain" && operation.phase !== "sending")
+      )
+        return operation;
+      return this.findByKey(operation);
+    });
+  }
+
+  async refresh(): Promise<Operation | null> {
+    return (await this.poll()).operation;
+  }
+
+  /**
+   * One status check. `reachable: false` means the server could not be asked (network) or answered
+   * in an unexpected shape - the caller backs off instead of polling at a fixed rate.
+   * The answer is the operation after the tasks queued during the check (a delete the user pressed
+   * while the GET was in flight), so a poll result never puts an older state back on screen.
+   */
+  async poll(): Promise<{ operation: Operation | null; reachable: boolean }> {
+    const { reachable } = await this.run(() => this.pollJob());
+    return { operation: await this.run(() => this.load()), reachable };
+  }
+
+  /** The delete key is stored before the request, so a retry reuses it. */
+  requestDelete(): Promise<Operation | null> {
+    return this.run(() => this.deleteJob());
+  }
+
+  /** Start over. Allowed when nothing is pending on the server side. */
+  reset(): Promise<void> {
+    return this.run(async () => {
+      const operation = await this.load();
+      if (operation?.localCopyUri)
+        await this.deps.files.remove(operation.localCopyUri);
+      await this.deps.store.save(null);
+      this.live = null;
+    });
+  }
+
+  /** Chains a task after the previous one; a failed task does not block the next. */
+  private run<T>(task: () => Promise<T>): Promise<T> {
+    const result = this.queue.then(task);
+    this.queue = result.catch(() => undefined);
+    return result;
+  }
+
+  private async load(): Promise<Operation | null> {
+    if (this.live === undefined) this.live = await this.deps.store.load();
+    return this.live;
+  }
+
+  /**
+   * A copy is created in inspect() before the user confirms; if the app is killed on the
+   * confirmation screen nothing else would ever delete it.
+   */
+  private async sweep(operation: Operation | null): Promise<void> {
+    for (const uri of await this.deps.files.listPrivate()) {
+      if (uri === operation?.localCopyUri || this.awaitingConfirm.has(uri))
+        continue;
+      await this.deps.files.remove(uri);
+    }
+  }
+
+  private async inspectFile(file: PickedFile): Promise<Inspected> {
     const { size, head } = await this.deps.files.inspect(file.uri, HEAD_BYTES);
     const check = checkFile(size, head);
     this.deps.log("file_checked", {
@@ -69,24 +199,31 @@ export class ImportController {
     });
     if (!check.ok) {
       await this.deps.files.remove(file.uri);
+      await this.removeSystemCopies();
       return { file, size, check, key: null, privateUri: null };
     }
     const key = this.deps.newKey();
     const privateUri = await this.deps.files.keepPrivate(file.uri, key);
+    this.awaitingConfirm.add(privateUri);
+    await this.removeSystemCopies();
     return { file, size, check, key, privateUri };
   }
 
-  /** The user cancelled on the confirmation screen. */
-  async discard(inspected: Inspected): Promise<void> {
-    await this.deps.files.remove(inspected.privateUri ?? inspected.file.uri);
+  /** The picker's own copy (iOS Inbox) is not ours to keep; a failed cleanup never breaks the flow. */
+  private async removeSystemCopies(): Promise<void> {
+    try {
+      await this.deps.files.removeSystemCopies();
+    } catch {
+      this.deps.log("system_copy_cleanup_failed");
+    }
   }
 
-  /** Confirmed: the key is created and stored before the first byte is sent. */
-  async confirm(inspected: Inspected): Promise<Operation> {
+  private async confirmFile(inspected: Inspected): Promise<Operation> {
     if (!inspected.check.ok || !inspected.key || !inspected.privateUri)
       throw new Error("cannot send a rejected file");
     const key = inspected.key;
     const localCopyUri = inspected.privateUri;
+    this.awaitingConfirm.delete(localCopyUri);
     const operation: Operation = {
       key,
       fileName: inspected.file.name,
@@ -100,55 +237,14 @@ export class ImportController {
       deleteError: null,
       error: null,
     };
-    await this.deps.store.save(operation);
-    return this.send(operation);
+    return this.send(await this.persist(operation));
   }
 
-  /** On app start: show the real job state, never re-send. */
-  async resume(): Promise<Operation | null> {
-    const operation = await this.deps.store.load();
-    if (!operation) return null;
-    if (operation.phase === "sending" || operation.phase === "uncertain")
-      return this.findByKey(operation);
-    if (operation.phase === "created") return this.refresh();
-    return operation;
-  }
-
-  /** User action after an uncertain POST: the same key with the same bytes. */
-  async retrySend(): Promise<Operation | null> {
-    const operation = await this.deps.store.load();
-    if (
-      !operation ||
-      operation.phase !== "uncertain" ||
-      !operation.localCopyUri
-    )
-      return operation;
-    const sending = { ...operation, phase: "sending" as const, error: null };
-    await this.deps.store.save(sending);
-    return this.send(sending);
-  }
-
-  /** User action: ask the server again by key (no upload). */
-  async checkByKey(): Promise<Operation | null> {
-    const operation = await this.deps.store.load();
-    if (
-      !operation ||
-      (operation.phase !== "uncertain" && operation.phase !== "sending")
-    )
-      return operation;
-    return this.findByKey(operation);
-  }
-
-  async refresh(): Promise<Operation | null> {
-    return (await this.poll()).operation;
-  }
-
-  /**
-   * One status check. `reachable: false` means the server could not be asked (network) or answered
-   * in an unexpected shape - the caller backs off instead of polling at a fixed rate.
-   */
-  async poll(): Promise<{ operation: Operation | null; reachable: boolean }> {
-    const operation = await this.deps.store.load();
+  private async pollJob(): Promise<{
+    operation: Operation | null;
+    reachable: boolean;
+  }> {
+    const operation = await this.load();
     if (!operation || !operation.jobId || operation.phase !== "created")
       return { operation, reachable: true };
     try {
@@ -179,9 +275,8 @@ export class ImportController {
     }
   }
 
-  /** The delete key is stored before the request, so a retry reuses it. */
-  async requestDelete(): Promise<Operation | null> {
-    const stored = await this.deps.store.load();
+  private async deleteJob(): Promise<Operation | null> {
+    const stored = await this.load();
     if (!stored || !stored.jobId || stored.phase !== "created") return stored;
     const operation = stored.deleteKey
       ? stored
@@ -217,14 +312,6 @@ export class ImportController {
       });
       return this.persist({ ...operation, deleteError: "network" });
     }
-  }
-
-  /** Start over. Allowed when nothing is pending on the server side. */
-  async reset(): Promise<void> {
-    const operation = await this.deps.store.load();
-    if (operation?.localCopyUri)
-      await this.deps.files.remove(operation.localCopyUri);
-    await this.deps.store.save(null);
   }
 
   private async send(operation: Operation): Promise<Operation> {
@@ -323,13 +410,14 @@ export class ImportController {
 
   /**
    * Saves the operation without the report items: transaction data is not kept at rest on the device.
-   * After a relaunch the ready report is fetched again from the server.
+   * The full operation stays in memory; after a relaunch the report is fetched again from the server.
    */
   private async persist(operation: Operation): Promise<Operation> {
     const atRest = operation.job?.items
       ? { ...operation, job: { ...operation.job, items: undefined } }
       : operation;
     await this.deps.store.save(atRest);
+    this.live = operation;
     return operation;
   }
 }
