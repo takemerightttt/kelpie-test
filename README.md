@@ -23,8 +23,20 @@ npm run ios        # 3. соберёт dev build на симуляторе
 По умолчанию берётся первый доступный симулятор/AVD (Android: если adb уже видит устройство, используется оно). Конкретное устройство: `IOS_DEVICE="iPhone 18 Pro" npm run ios` / `AVD=<имя AVD> npm run android` (список: `$ANDROID_HOME/emulator/emulator -list-avds`).
 
 Тестовые файлы нужно положить в симулятор/эмулятор, чтобы выбрать их в системном picker:
-- iOS: перетащить файлы из `mock-kit/fixtures/` на окно симулятора - они появятся в «Файлы».
 - Android: `adb push mock-kit/fixtures/statement.csv /sdcard/Download/` (так же для остальных).
+- iOS 26/27: перетаскивание на окно симулятора и загрузка через Safari не работают (ошибка Apple FB19888064).
+  Рабочий способ - скопировать файлы в хранилище приложения «Файлы» загруженного симулятора:
+  ```bash
+  xcrun simctl launch booted com.apple.DocumentsApp   # один раз, чтобы появилась папка
+  DEST=$(find ~/Library/Developer/CoreSimulator/Devices/<UDID>/data/Containers/Shared/AppGroup -maxdepth 2 -type d -name "File Provider Storage" | head -1)
+  rsync -av mock-kit/fixtures/ "$DEST/"
+  ```
+  UDID загруженного симулятора: `xcrun simctl list devices | grep Booted`. Файлы появятся в «Файлы» -> «На iPhone».
+  Папок `File Provider Storage` может быть несколько - нужна та, чей AppGroup относится к
+  `group.com.apple.FileProvider.LocalStorage` («На iPhone»).
+- Xcode 27: приложения Simulator.app больше нет, его заменил DeviceHub (`/Applications/Xcode.app/Contents/Applications/DeviceHub.app`).
+  Expo 57 открывает его сам; вручную окно симулятора открывается так: `open "devices://device/open?id=<UDID>"`.
+  Если после `IOS_DEVICE=... npm run ios` приложение осталось за рабочим столом: `xcrun simctl launch booted com.kuliaev.kelpiestatementimport`.
 - `oversize.csv` (>10 МиБ) не лежит в наборе - создать один раз: `npm run mock:oversize`.
 
 Физическое устройство: в `app.json -> expo.extra.apiBaseUrl` указать LAN-адрес Mac
@@ -63,10 +75,11 @@ JS-бандлы iOS и Android собираются (`npx expo export`), нат�
 
 | Платформа | Устройство / ОС | Выбор файла | Полный импорт | lost_ack + relaunch | stale_status | delete_failure | spoofed / oversize |
 |---|---|---|---|---|---|---|---|
-| iOS | не проверено | - | - | - | - | - | - |
-| Android | не проверено | - | - | - | - | - | - |
+| iOS | симулятор iPhone 18 Pro Max / iOS 27.0 (Xcode 27, DeviceHub) | да | да (PDF и CSV, Report ready 151.99 AUD) | да (POST без ответа -> job найден по ключу -> terminate/launch -> тот же job, newJobs +1) | да (processing/2 после ready/3 проигнорирован, отчёт на экране) | да (503 -> «не удалено», повтор тем же ключом -> deleted) | да (оба отклонены до POST, createRequests не изменился) |
+| Android | эмулятор Medium Phone API 37 / Android 17 (Android Studio) | да | да (PDF и CSV, Report ready 151.99 AUD) | да (POST без ответа -> job найден по ключу -> перезапуск процесса -> тот же job, newJobs +1) | да (processing/2 после ready/3 проигнорирован, отчёт на экране) | да (503 -> «не удалено», повтор тем же ключом -> deleted) | да (оба отклонены до POST, createRequests не изменился) |
 
-Таблица обновляется по фактическому запуску; непроверенная платформа остаётся «не проверено».
+Прогон 15.10.2026 на macOS, Node 22, после `npx expo prebuild --clean`. Лог каждого прогона: `[import] ...` строки в терминале
+`npm run android` / `npm run ios` (события, счётчики mock, маршруты без параметров; имена файлов и содержимое отчёта в лог не попадают).
 
 ## Как устроено
 
