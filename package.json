@@ -29,8 +29,8 @@
   },
   "scripts": {
     "start": "expo start --dev-client",
-    "ios": "expo run:ios",
-    "android": "expo run:android",
+    "ios": "sh scripts/ios.sh",
+    "android": "sh scripts/android.sh",
     "mock": "npm --prefix mock-kit start",
     "mock:oversize": "npm --prefix mock-kit run fixtures:oversize",
     "test": "jest",

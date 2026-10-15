@@ -7,29 +7,25 @@ React Native + TypeScript, Expo SDK 57 (development build, нативный за
 
 - macOS с Xcode (iOS-симулятор) и Android Studio (Android-эмулятор).
 - Node.js 20+ (проверено на 22).
-- Для Android: `adb` в PATH (идёт с Android Studio).
+- Для Android: SDK в `$ANDROID_HOME` или `~/Library/Android/sdk` (ставится с Android Studio).
 
 ## Запуск с чистого checkout
 
 ```bash
-git clone <repo> && cd kelpie-statement-import
+git clone https://github.com/takemerightttt/kelpie-test.git && cd kelpie-test
 npm ci
 
-# 1. mock API (отдельный терминал)
-npm run mock                 # http://127.0.0.1:8787
-npm run mock:oversize        # создать fixtures/oversize.csv (>10 МиБ) - один раз
-
-# 2a. iOS
-npm run ios                  # соберёт dev build и откроет в симуляторе
-
-# 2b. Android
-adb reverse tcp:8787 tcp:8787
-npm run android              # соберёт dev build и откроет в эмуляторе
+npm run mock       # 1. mock API на http://127.0.0.1:8787 - в отдельном терминале
+npm run android    # 2. поднимет эмулятор, дождётся загрузки, сделает adb reverse, соберёт dev build
+npm run ios        # 3. закроет открытые симуляторы и соберёт dev build на нужном
 ```
+
+Устройства задаются переменными: `AVD=<имя AVD> npm run android` (по умолчанию `Medium_Phone_API_37.0`), `IOS_DEVICE="<симулятор>" npm run ios` (по умолчанию `iPhone 18 Pro`).
 
 Тестовые файлы нужно положить в симулятор/эмулятор, чтобы выбрать их в системном picker:
 - iOS: перетащить файлы из `mock-kit/fixtures/` на окно симулятора - они появятся в «Файлы».
 - Android: `adb push mock-kit/fixtures/statement.csv /sdcard/Download/` (так же для остальных).
+- `oversize.csv` (>10 МиБ) не лежит в наборе - создать один раз: `npm run mock:oversize`.
 
 Физическое устройство: в `app.json -> expo.extra.apiBaseUrl` указать LAN-адрес Mac
 (например `http://192.168.1.10:8787`) и запустить mock с `HOST=0.0.0.0 npm run mock`.
