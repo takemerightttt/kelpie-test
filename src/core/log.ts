@@ -2,15 +2,31 @@
 // names or transaction descriptions, so they cannot end up in logs, crash
 // reports or analytics by accident.
 
+export type PathTemplate =
+  | "/imports"
+  | "/imports/by-key"
+  | "/imports/{id}"
+  | "/__test/scenario"
+  | "/__test/state"
+  | "/__test/reset"
+  | "other";
+
+export type HttpErrorKind = "timeout" | "network" | "aborted";
+
 export type SafeFields = {
   jobId?: string | null;
-  status?: string;
+  /** Job status, or the HTTP status in http_request. */
+  status?: string | number;
   revision?: number;
   httpStatus?: number;
   phase?: string;
   format?: string;
   sizeBucket?: "lt_1mb" | "lt_10mb" | "over_10mb";
   reason?: string;
+  method?: "GET" | "POST" | "DELETE";
+  path?: PathTemplate;
+  errorKind?: HttpErrorKind;
+  durationMs?: number;
 };
 
 export type SafeLog = (event: string, fields?: SafeFields) => void;

@@ -13,7 +13,7 @@ import { deviceHttp } from "../platform/http";
 import { deviceStore } from "../platform/storage";
 
 export function useImport() {
-  const api = useMemo(() => new ImportsApi(deviceHttp(API_BASE_URL)), []);
+  const api = useMemo(() => new ImportsApi(deviceHttp(API_BASE_URL, consoleLog)), []);
   const controller = useMemo(
     () =>
       new ImportController({
