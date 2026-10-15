@@ -78,6 +78,10 @@ JS-бандлы iOS и Android собираются (`npx expo export`), нат�
   HTTP-контракт, безопасный логгер. Тот же код работает в Jest против mock.
 - `src/platform/` - `expo-file-system` (размер из метаданных, первые 32 байта через `FileHandle`,
   отправка файла потоком `File.upload` без загрузки в память), AsyncStorage, адрес API.
-- `src/ui/` - экран импорта и экран диагностики.
+- `src/features/statement-import/` - экран импорта (`ImportScreen` - только композиция секций),
+  хук `useImport` (связывает core с React), секции и диагностика в `components/`.
+- `src/ui/` - общее: `theme.ts` (единственное место с цветами, отступами, размерами шрифта),
+  `Button`, `Card`, `Row`. Стили - `StyleSheet.create` в файле каждого компонента.
+- Импорт `react-native` / `expo-*` в `src/core` запрещён правилом ESLint (`npm run lint`).
 
 Подробнее о решениях и рисках - `SELF_REVIEW.md`, о разрешениях и выкатке - `RELEASE_NOTES.md`.
