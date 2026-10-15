@@ -16,11 +16,11 @@ git clone https://github.com/takemerightttt/kelpie-test.git && cd kelpie-test
 npm ci
 
 npm run mock       # 1. mock API на http://127.0.0.1:8787 - в отдельном терминале
-npm run android    # 2. поднимет эмулятор, дождётся загрузки, сделает adb reverse, соберёт dev build
-npm run ios        # 3. закроет открытые симуляторы и соберёт dev build на нужном
+npm run android    # 2. поднимет эмулятор (если устройство не подключено), сделает adb reverse, соберёт dev build
+npm run ios        # 3. соберёт dev build на симуляторе
 ```
 
-Android-устройство задаётся переменной: `AVD=<имя AVD> npm run android` (по умолчанию `Medium_Phone_API_37.0`). iOS: по умолчанию expo выбирает симулятор сам; чтобы запустить на конкретном: `IOS_DEVICE="iPhone 18 Pro" npm run ios`.
+По умолчанию берётся первый доступный симулятор/AVD (Android: если adb уже видит устройство, используется оно). Конкретное устройство: `IOS_DEVICE="iPhone 18 Pro" npm run ios` / `AVD=<имя AVD> npm run android` (список: `$ANDROID_HOME/emulator/emulator -list-avds`).
 
 Тестовые файлы нужно положить в симулятор/эмулятор, чтобы выбрать их в системном picker:
 - iOS: перетащить файлы из `mock-kit/fixtures/` на окно симулятора - они появятся в «Файлы».

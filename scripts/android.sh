@@ -1,10 +1,11 @@
 #!/bin/sh
 # Boot an Android emulator if none is connected, forward the mock API port and run the dev build.
+# AVD picks a specific emulator; by default the first one from -list-avds is used.
 set -eu
 
 SDK="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
-AVD="${AVD:-Medium_Phone_API_37.0}"
 ADB="$SDK/platform-tools/adb"
+EMULATOR="$SDK/emulator/emulator"
 BOOT_TIMEOUT=180
 
 if [ ! -x "$ADB" ]; then
@@ -18,12 +19,18 @@ if ! curl -s http://127.0.0.1:8787/health >/dev/null; then
 fi
 
 if ! "$ADB" devices | awk 'NR > 1 && $2 == "device" { found = 1 } END { exit !found }'; then
-  if ! "$SDK/emulator/emulator" -list-avds | grep -qx "$AVD"; then
-    echo "AVD не найден: $AVD (список: $SDK/emulator/emulator -list-avds)" >&2
+  avds="$("$EMULATOR" -list-avds)"
+  if [ -z "$avds" ]; then
+    echo "AVD не найден: создайте AVD в Android Studio (Device Manager)" >&2
+    exit 1
+  fi
+  AVD="${AVD:-$(printf '%s\n' "$avds" | head -n 1)}"
+  if ! printf '%s\n' "$avds" | grep -qx "$AVD"; then
+    echo "AVD не найден: $AVD (список: $EMULATOR -list-avds)" >&2
     exit 1
   fi
   echo "Запуск эмулятора $AVD..."
-  "$SDK/emulator/emulator" -avd "$AVD" >/dev/null 2>&1 &
+  "$EMULATOR" -avd "$AVD" >/dev/null 2>&1 &
 fi
 
 echo "Ожидание загрузки Android..."
