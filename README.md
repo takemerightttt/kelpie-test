@@ -20,7 +20,7 @@ npm run android    # 2. поднимет эмулятор (если устрой
 npm run ios        # 3. соберёт dev build на симуляторе
 ```
 
-По умолчанию берётся первый доступный симулятор/AVD (Android: если adb уже видит устройство, используется оно). Конкретное устройство: `IOS_DEVICE="iPhone 18 Pro" npm run ios` / `AVD=<имя AVD> npm run android` (список: `$ANDROID_HOME/emulator/emulator -list-avds`).
+По умолчанию берётся первый доступный симулятор/AVD (Android: если adb уже видит устройство, используется оно). Конкретное устройство: `IOS_DEVICE="iPhone 18 Pro Max" npm run ios` / `AVD=<имя AVD> npm run android` (список: `$ANDROID_HOME/emulator/emulator -list-avds`).
 
 Тестовые файлы нужно положить в симулятор/эмулятор, чтобы выбрать их в системном picker:
 - Android: `adb push mock-kit/fixtures/statement.csv /sdcard/Download/` (так же для остальных).
@@ -64,6 +64,11 @@ npm run check       # всё вместе
 | delete_failure | 503 -> «не удалено», ключ удаления сохранён; поздний ready не отменяет намерение; после happy тот же ключ -> deleting -> deleted/5 |
 | spoofed + oversize | оба отклонены до POST, `createRequests` не изменился, временные копии удалены |
 | ключ до отправки | первое сохранение операции происходит до upload |
+| гонки состояния (stateRaces) | GET в полёте + Delete не возвращает job в ready; resume() во время POST не перетирает created; после stale-ответа отчёт остаётся на экране; relaunch в фазе sending находит job по ключу без второго POST |
+| логи (logs) | в happy, lost_ack и delete_failure ни одна запись логгера не содержит имя файла, мерчантов, суммы и заголовок CSV |
+| приватные копии (privateCopies) | при старте удаляются копии, не относящиеся к текущей операции; копия на экране подтверждения не трогается; пустая папка после «Start over» |
+| системные копии iOS (systemCopies) | после проверки файла и при старте вызывается очистка Inbox; её ошибка не ломает поток и не пишет путей в лог |
+| имя файла (fileNameHeader) | `X-File-Name` percent-encoded, кириллическое имя доходит до mock и принимается, длина укладывается в 255 |
 
 Результат на сервере разработки (Linux, Node 22): **46/46 тестов, tsc и lint без ошибок**,
 JS-бандлы iOS и Android собираются (`npx expo export`), нативные проекты генерируются (`npx expo prebuild`).
@@ -72,6 +77,23 @@ JS-бандлы iOS и Android собираются (`npx expo export`), нат�
 
 Сценарии переключаются на экране «Diagnostics» в приложении (кнопки `Scenario: ...`,
 `Read counters`) - исходники между прогонами не меняются.
+
+### Ручной прогон матрицы (5 минут)
+
+Все кнопки сценариев и счётчики - на экране «Diagnostics» (`Scenario: ...`, `Read counters`, `Reset mock`).
+Счётчики ниже - значения `/__test/state` после каждого шага, если начать с `Reset mock`.
+
+1. **Reset mock** -> `Read counters`: все нули.
+2. **happy**: `Choose file` -> `statement.pdf` -> `Confirm`. Экран: Queued -> Processing -> «Report ready», 2 позиции, Total 151.99 AUD. Счётчики: `createRequests 1, newJobs 1`.
+3. **stale_status**: `Scenario: stale_status` -> на карточке `Refresh` дважды. Второй ответ mock - processing/2; экран остаётся «Report ready» с позициями, в логе `stale_response_ignored`.
+4. **delete_failure**: `Scenario: delete_failure` -> `Delete this import`. Экран: «Deletion failed - your data is still on the server», отчёт остаётся виден. `Scenario: happy` -> `Retry deletion` -> «Deletion requested...» -> «Deleted on the server» -> `New import`. Счётчики: `deleteRequests` = число нажатий (503) + 1.
+5. **lost_ack + relaunch**: `Scenario: lost_ack` -> `Choose file` -> `statement.csv` -> `Confirm`. POST остаётся без ответа, приложение находит job по ключу и показывает «Report ready» (в логе `import_uncertain` -> `import_recovered`). Убить процесс и запустить заново:
+   - iOS: `xcrun simctl terminate booted com.kuliaev.kelpiestatementimport && xcrun simctl launch booted com.kuliaev.kelpiestatementimport`
+   - Android: `adb shell am force-stop com.kuliaev.kelpiestatementimport && adb shell monkey -p com.kuliaev.kelpiestatementimport 1`
+   На экране тот же отчёт без выбора файла. Счётчики: `createRequests 2, newJobs 2, duplicateHits 0` (второго POST нет). Затем `Delete this import` -> «Deleted on the server» -> `New import`.
+6. **spoofed + oversize**: `Read counters` (запомнить `createRequests`) -> `Choose file` -> `spoofed.pdf`: «This is not a PDF or CSV statement.» -> `Choose file` -> `oversize.csv`: «This file is larger than 10 MiB.» -> `Read counters`: `createRequests` не изменился.
+
+Если POST остался без ответа и job по ключу не найден (404), на экране «Not sure the upload arrived» с кнопками `Check again` (поиск по ключу) и `Send the same file again` (тот же ключ и байты - mock вернёт тот же job, `duplicateHits +1`).
 
 | Платформа | Устройство / ОС | Выбор файла | Полный импорт | lost_ack + relaunch | stale_status | delete_failure | spoofed / oversize |
 |---|---|---|---|---|---|---|---|
