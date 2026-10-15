@@ -1,6 +1,6 @@
-import { z } from "zod";
+import { z as zod } from "zod";
 
-export const JobStatusSchema = z.enum([
+export const JobStatusSchema = zod.enum([
   "queued",
   "processing",
   "ready",
@@ -8,26 +8,26 @@ export const JobStatusSchema = z.enum([
   "deleted",
   "error",
 ]);
-export type JobStatus = z.infer<typeof JobStatusSchema>;
+export type JobStatus = zod.infer<typeof JobStatusSchema>;
 
-export const RecurringItemSchema = z.object({
-  id: z.string(),
-  merchant: z.string(),
-  amountMinor: z.number().int(),
-  cadence: z.string(),
-  lastSeen: z.string(),
+export const RecurringItemSchema = zod.object({
+  id: zod.string(),
+  merchant: zod.string(),
+  amountMinor: zod.number().int(),
+  cadence: zod.string(),
+  lastSeen: zod.string(),
 });
-export type RecurringItem = z.infer<typeof RecurringItemSchema>;
+export type RecurringItem = zod.infer<typeof RecurringItemSchema>;
 
 /** Every job response from the server: GET, POST 202, DELETE 202. */
-export const JobViewSchema = z.object({
-  jobId: z.string(),
+export const JobViewSchema = zod.object({
+  jobId: zod.string(),
   status: JobStatusSchema,
-  revision: z.number().int(),
-  currency: z.string().optional(),
-  items: z.array(RecurringItemSchema).optional(),
+  revision: zod.number().int(),
+  currency: zod.string().optional(),
+  items: zod.array(RecurringItemSchema).optional(),
 });
-export type JobView = z.infer<typeof JobViewSchema>;
+export type JobView = zod.infer<typeof JobViewSchema>;
 
 /**
  * What the app remembers about the one import in progress. Saved before every
@@ -38,7 +38,8 @@ export type Phase =
   | "sending" // POST may be in flight or its answer was lost
   | "uncertain" // POST outcome unknown and the job was not found by key yet
   | "created" // the server has the job
-  | "failed"; // the server refused the upload (409 / 4xx)
+  | "failed" // the server refused the upload (409 / 4xx)
+  | "missing"; // the job was created, but the server now answers 404 for it - not a deletion
 
 export type Operation = {
   key: string;

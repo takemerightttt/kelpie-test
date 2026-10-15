@@ -21,10 +21,10 @@ export interface FileStore {
 
 export interface OperationStore {
   load(): Promise<Operation | null>;
-  save(op: Operation | null): Promise<void>;
+  save(operation: Operation | null): Promise<void>;
 }
 
-export type Deps = {
+export type Dependencies = {
   api: ImportsApi;
   files: FileStore;
   store: OperationStore;
@@ -52,33 +52,33 @@ export type Inspected = {
  * the user presses "retry" - with the same key and the same bytes.
  */
 export class ImportController {
-  constructor(private readonly d: Deps) {}
+  constructor(private readonly deps: Dependencies) {}
 
   async current(): Promise<Operation | null> {
-    return this.d.store.load();
+    return this.deps.store.load();
   }
 
   /** Local validation before anything leaves the device. Rejected files are deleted right away. */
   async inspect(file: PickedFile): Promise<Inspected> {
-    const { size, head } = await this.d.files.inspect(file.uri, HEAD_BYTES);
+    const { size, head } = await this.deps.files.inspect(file.uri, HEAD_BYTES);
     const check = checkFile(size, head);
-    this.d.log("file_checked", {
+    this.deps.log("file_checked", {
       sizeBucket: sizeBucket(size),
       format: check.ok ? check.format : undefined,
       reason: check.ok ? undefined : check.reason,
     });
     if (!check.ok) {
-      await this.d.files.remove(file.uri);
+      await this.deps.files.remove(file.uri);
       return { file, size, check, key: null, privateUri: null };
     }
-    const key = this.d.newKey();
-    const privateUri = await this.d.files.keepPrivate(file.uri, key);
+    const key = this.deps.newKey();
+    const privateUri = await this.deps.files.keepPrivate(file.uri, key);
     return { file, size, check, key, privateUri };
   }
 
   /** The user cancelled on the confirmation screen. */
   async discard(inspected: Inspected): Promise<void> {
-    await this.d.files.remove(inspected.privateUri ?? inspected.file.uri);
+    await this.deps.files.remove(inspected.privateUri ?? inspected.file.uri);
   }
 
   /** Confirmed: the key is created and stored before the first byte is sent. */
@@ -87,7 +87,7 @@ export class ImportController {
       throw new Error("cannot send a rejected file");
     const key = inspected.key;
     const localCopyUri = inspected.privateUri;
-    const op: Operation = {
+    const operation: Operation = {
       key,
       fileName: inspected.file.name,
       size: inspected.size,
@@ -100,177 +100,236 @@ export class ImportController {
       deleteError: null,
       error: null,
     };
-    await this.d.store.save(op);
-    return this.send(op);
+    await this.deps.store.save(operation);
+    return this.send(operation);
   }
 
   /** On app start: show the real job state, never re-send. */
   async resume(): Promise<Operation | null> {
-    const op = await this.d.store.load();
-    if (!op) return null;
-    if (op.phase === "sending" || op.phase === "uncertain")
-      return this.findByKey(op);
-    if (op.phase === "created") return this.refresh();
-    return op;
+    const operation = await this.deps.store.load();
+    if (!operation) return null;
+    if (operation.phase === "sending" || operation.phase === "uncertain")
+      return this.findByKey(operation);
+    if (operation.phase === "created") return this.refresh();
+    return operation;
   }
 
   /** User action after an uncertain POST: the same key with the same bytes. */
   async retrySend(): Promise<Operation | null> {
-    const op = await this.d.store.load();
-    if (!op || op.phase !== "uncertain" || !op.localCopyUri) return op;
-    const sending = { ...op, phase: "sending" as const, error: null };
-    await this.d.store.save(sending);
+    const operation = await this.deps.store.load();
+    if (
+      !operation ||
+      operation.phase !== "uncertain" ||
+      !operation.localCopyUri
+    )
+      return operation;
+    const sending = { ...operation, phase: "sending" as const, error: null };
+    await this.deps.store.save(sending);
     return this.send(sending);
   }
 
   /** User action: ask the server again by key (no upload). */
   async checkByKey(): Promise<Operation | null> {
-    const op = await this.d.store.load();
-    if (!op || (op.phase !== "uncertain" && op.phase !== "sending")) return op;
-    return this.findByKey(op);
+    const operation = await this.deps.store.load();
+    if (
+      !operation ||
+      (operation.phase !== "uncertain" && operation.phase !== "sending")
+    )
+      return operation;
+    return this.findByKey(operation);
   }
 
   async refresh(): Promise<Operation | null> {
-    return (await this.poll()).op;
+    return (await this.poll()).operation;
   }
 
   /**
    * One status check. `reachable: false` means the server could not be asked (network) or answered
    * in an unexpected shape - the caller backs off instead of polling at a fixed rate.
    */
-  async poll(): Promise<{ op: Operation | null; reachable: boolean }> {
-    const op = await this.d.store.load();
-    if (!op || !op.jobId) return { op, reachable: true };
+  async poll(): Promise<{ operation: Operation | null; reachable: boolean }> {
+    const operation = await this.deps.store.load();
+    if (!operation || !operation.jobId || operation.phase !== "created")
+      return { operation, reachable: true };
     try {
-      const res = await this.d.api.getJob(op.jobId);
-      if (res.kind !== "found")
-        return { op, reachable: res.kind === "not_found" };
-      const next = applyView(op, res.view);
-      if (next === op) {
-        this.d.log("stale_response_ignored", {
-          jobId: op.jobId,
-          status: res.view.status,
-          revision: res.view.revision,
+      const response = await this.deps.api.getJob(operation.jobId);
+      if (response.kind === "not_found")
+        return {
+          operation: await this.markMissing(operation),
+          reachable: true,
+        };
+      if (response.kind !== "found") return { operation, reachable: false };
+      const next = applyView(operation, response.view);
+      if (next === operation) {
+        this.deps.log("stale_response_ignored", {
+          jobId: operation.jobId,
+          status: response.view.status,
+          revision: response.view.revision,
         });
-        return { op, reachable: true };
+        return { operation, reachable: true };
       }
-      return { op: await this.persist(next), reachable: true };
-    } catch (e) {
-      this.d.log("poll_failed", {
-        jobId: op.jobId,
-        reason: e instanceof ResponseFormatError ? "bad_response" : "network",
+      return { operation: await this.persist(next), reachable: true };
+    } catch (error) {
+      this.deps.log("poll_failed", {
+        jobId: operation.jobId,
+        reason:
+          error instanceof ResponseFormatError ? "bad_response" : "network",
       });
-      return { op, reachable: false };
+      return { operation, reachable: false };
     }
   }
 
   /** The delete key is stored before the request, so a retry reuses it. */
   async requestDelete(): Promise<Operation | null> {
-    const stored = await this.d.store.load();
-    if (!stored || !stored.jobId) return stored;
-    const op = stored.deleteKey
+    const stored = await this.deps.store.load();
+    if (!stored || !stored.jobId || stored.phase !== "created") return stored;
+    const operation = stored.deleteKey
       ? stored
-      : await this.persist({ ...stored, deleteKey: this.d.newKey() });
+      : await this.persist({ ...stored, deleteKey: this.deps.newKey() });
     try {
-      const res = await this.d.api.remove(
-        op.jobId as string,
-        op.deleteKey as string,
+      const response = await this.deps.api.remove(
+        operation.jobId as string,
+        operation.deleteKey as string,
       );
-      if (res.kind === "accepted") {
-        this.d.log("delete_accepted", {
-          jobId: op.jobId,
-          status: res.view.status,
+      if (response.kind === "accepted") {
+        this.deps.log("delete_accepted", {
+          jobId: operation.jobId,
+          status: response.view.status,
         });
-        return this.persist({ ...applyView(op, res.view), deleteError: null });
+        return this.persist({
+          ...applyView(operation, response.view),
+          deleteError: null,
+        });
       }
-      this.d.log("delete_failed", { jobId: op.jobId, httpStatus: res.status });
-      return this.persist({ ...op, deleteError: `server_${res.status}` });
+      if (response.status === 404) return this.markMissing(operation);
+      this.deps.log("delete_failed", {
+        jobId: operation.jobId,
+        httpStatus: response.status,
+      });
+      return this.persist({
+        ...operation,
+        deleteError: `server_${response.status}`,
+      });
     } catch {
-      this.d.log("delete_failed", { jobId: op.jobId, reason: "network" });
-      return this.persist({ ...op, deleteError: "network" });
+      this.deps.log("delete_failed", {
+        jobId: operation.jobId,
+        reason: "network",
+      });
+      return this.persist({ ...operation, deleteError: "network" });
     }
   }
 
   /** Start over. Allowed when nothing is pending on the server side. */
   async reset(): Promise<void> {
-    const op = await this.d.store.load();
-    if (op?.localCopyUri) await this.d.files.remove(op.localCopyUri);
-    await this.d.store.save(null);
+    const operation = await this.deps.store.load();
+    if (operation?.localCopyUri)
+      await this.deps.files.remove(operation.localCopyUri);
+    await this.deps.store.save(null);
   }
 
-  private async send(op: Operation): Promise<Operation> {
-    if (!op.localCopyUri) return this.findByKey(op);
+  private async send(operation: Operation): Promise<Operation> {
+    if (!operation.localCopyUri) return this.findByKey(operation);
     try {
-      const res = await this.d.api.create(op.key, op.fileName, op.localCopyUri);
-      if (res.kind === "accepted") {
-        this.d.log("import_created", {
-          jobId: res.view.jobId,
-          status: res.view.status,
-          revision: res.view.revision,
+      const response = await this.deps.api.create(
+        operation.key,
+        operation.fileName,
+        operation.localCopyUri,
+      );
+      if (response.kind === "accepted") {
+        this.deps.log("import_created", {
+          jobId: response.view.jobId,
+          status: response.view.status,
+          revision: response.view.revision,
         });
-        return this.dropCopy(applyView({ ...op, error: null }, res.view));
+        return this.dropCopy(
+          applyView({ ...operation, error: null }, response.view),
+        );
       }
-      if (res.kind === "server_error") {
-        this.d.log("import_uncertain", { httpStatus: res.status });
+      if (response.kind === "server_error") {
+        this.deps.log("import_uncertain", { httpStatus: response.status });
         return this.findByKey(
-          await this.persist({ ...op, phase: "uncertain" }),
+          await this.persist({ ...operation, phase: "uncertain" }),
         );
       }
       const error =
-        res.kind === "conflict" ? "key_conflict" : `rejected_${res.status}`;
-      this.d.log("import_rejected", { reason: error });
-      return this.dropCopy({ ...op, phase: "failed", error });
-    } catch (e) {
+        response.kind === "conflict"
+          ? "key_conflict"
+          : `rejected_${response.status}`;
+      this.deps.log("import_rejected", { reason: error });
+      return this.dropCopy({ ...operation, phase: "failed", error });
+    } catch (error) {
       // A 202 in an unknown shape still means the server took the file; no answer means it may or may
       // not have. Either way: look the job up by key, never re-send on our own.
       const reason =
-        e instanceof ResponseFormatError ? "bad_response" : "no_answer";
-      this.d.log("import_uncertain", { reason });
-      return this.findByKey(await this.persist({ ...op, phase: "uncertain" }));
+        error instanceof ResponseFormatError ? "bad_response" : "no_answer";
+      this.deps.log("import_uncertain", { reason });
+      return this.findByKey(
+        await this.persist({ ...operation, phase: "uncertain" }),
+      );
     }
   }
 
-  private async findByKey(op: Operation): Promise<Operation> {
+  private async findByKey(operation: Operation): Promise<Operation> {
     try {
-      const res = await this.d.api.findByKey(op.key);
-      if (res.kind === "found") {
-        this.d.log("import_recovered", {
-          jobId: res.view.jobId,
-          status: res.view.status,
-          revision: res.view.revision,
+      const response = await this.deps.api.findByKey(operation.key);
+      if (response.kind === "found") {
+        this.deps.log("import_recovered", {
+          jobId: response.view.jobId,
+          status: response.view.status,
+          revision: response.view.revision,
         });
-        return this.dropCopy(applyView({ ...op, error: null }, res.view));
+        return this.dropCopy(
+          applyView({ ...operation, error: null }, response.view),
+        );
       }
       return this.persist({
-        ...op,
+        ...operation,
         phase: "uncertain",
         error:
-          res.kind === "not_found" ? "not_found_yet" : `lookup_${res.status}`,
+          response.kind === "not_found"
+            ? "not_found_yet"
+            : `lookup_${response.status}`,
       });
-    } catch (e) {
+    } catch (error) {
       return this.persist({
-        ...op,
+        ...operation,
         phase: "uncertain",
-        error: e instanceof ResponseFormatError ? "bad_response" : "network",
+        error:
+          error instanceof ResponseFormatError ? "bad_response" : "network",
       });
     }
+  }
+
+  /**
+   * 404 for a job the server had created: it no longer knows the import. Not "deleted" (no confirmation)
+   * and not a network error, so nothing retries on its own; the user can only start over.
+   */
+  private async markMissing(operation: Operation): Promise<Operation> {
+    this.deps.log("job_missing", { jobId: operation.jobId });
+    return this.persist({
+      ...operation,
+      phase: "missing",
+      deleteError: null,
+      error: null,
+    });
   }
 
   /** The server has the job (or refused it): the private copy is no longer needed. */
-  private async dropCopy(op: Operation): Promise<Operation> {
-    if (op.localCopyUri) await this.d.files.remove(op.localCopyUri);
-    return this.persist({ ...op, localCopyUri: null });
+  private async dropCopy(operation: Operation): Promise<Operation> {
+    if (operation.localCopyUri)
+      await this.deps.files.remove(operation.localCopyUri);
+    return this.persist({ ...operation, localCopyUri: null });
   }
 
   /**
    * Saves the operation without the report items: transaction data is not kept at rest on the device.
    * After a relaunch the ready report is fetched again from the server.
    */
-  private async persist(op: Operation): Promise<Operation> {
-    const atRest = op.job?.items
-      ? { ...op, job: { ...op.job, items: undefined } }
-      : op;
-    await this.d.store.save(atRest);
-    return op;
+  private async persist(operation: Operation): Promise<Operation> {
+    const atRest = operation.job?.items
+      ? { ...operation, job: { ...operation.job, items: undefined } }
+      : operation;
+    await this.deps.store.save(atRest);
+    return operation;
   }
 }

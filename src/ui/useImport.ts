@@ -74,7 +74,7 @@ export function useImport() {
     if (timer.current) clearTimeout(timer.current);
     if (active && op && needsPolling(op)) {
       timer.current = setTimeout(async () => {
-        const { op: next, reachable } = await controller.poll();
+        const { operation: next, reachable } = await controller.poll();
         setFailures((n) => (reachable ? 0 : n + 1));
         setOp(next);
       }, pollDelay(failures));

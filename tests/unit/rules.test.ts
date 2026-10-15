@@ -3,6 +3,7 @@ import {
   applyView,
   formatMoney,
   monthlyTotalMinor,
+  needsPolling,
   pollDelay,
 } from "../../src/core/rules";
 import type { JobView, Operation } from "../../src/core/types";
@@ -72,6 +73,12 @@ describe("job state rules", () => {
     });
     expect(total).toBe(15199);
     expect(formatMoney(total, "AUD")).toBe("151.99 AUD");
+  });
+
+  it("stops polling a job the server no longer knows", () => {
+    const processing = { ...base, job: view("processing", 2) };
+    expect(needsPolling(processing)).toBe(true);
+    expect(needsPolling({ ...processing, phase: "missing" })).toBe(false);
   });
 
   it("polls at a fixed pace while reachable and backs off with a cap after failures", () => {
